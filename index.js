@@ -1,79 +1,86 @@
 const express = require('express')
 const app = express()
 const cors = require('cors')
-require('dotenv').config()
-var bodyParser = require('body-parser')
-var mongoose = require('mongoose');
-const mySecret = process.env['MONGO_URI']
-console.log(mySecret);
-mongoose.connect(mySecret, { useNewUrlParser: true, useUnifiedTopology: true });
+const bodyParser = require('body-parser')
+const hash = require('object-hash')
+app.use(bodyParser.urlencoded({
+    extended: false
+}));
 
-app.use(bodyParser.urlencoded({ extended: false }))
-
-
-let excerciseSchema = new mongoose.Schema({
-    username: String,
-    description: String,
-    duration: Number,
-    date: Date,
-}
-)
-
-let doc = mongoose.model('doc', excerciseSchema);
 app.use(cors())
 app.use(express.static('public'))
+
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/views/index.html')
 });
 
-let allUsers = [];
-app.get('/api/users', function(req, res) {
-    res.send(allUsers)
+var users = []
+var exercises = []
 
-
-})
-
-
-app.post('/api/users', function(req, res) {
-    let user = new doc({
-        username: req.body.username,
-    })
-    user.save((err, data) => {
-        if (err) return console.error(err);
-        allUsers.push({
-            username: data.username,
-            _id: data.id
-        })
-        res.json({
-            username: data.username,
-            _id: data.id
-        });
-    });
-
+app.post('/api/users', (req, res) => {
+    let n = req.body.username
+    let id = hash(n)
+    let userObject = {
+        "username": n,
+        "_id": id
+    }
+    users.push(userObject)
+    res.json(userObject)
 });
 
-app.post('/api/users/:_id/exercises', function(req, res) {
-    doc.findOneAndUpdate({ _id: req.params._id },
-        {
-            description: req.body.description,
-            date: req.body.date,
-            duration: req.body.duration
-        }, { new: true }, (err, data) => {
-            if (err) return console.log(err);
-            res.json({
-                _id: data._id,
-                username: data.username,
-                date: data.date.toDateString(),
-                duration: data.duration,
-                description: data.description
-            })
-        });
+app.get('/api/users', (req, res) => {
+    res.send(users)
+});
+
+app.get('/api/users/:_id/logs', (req, res) => {
+    let id = req.params._id;
+    let user = users.findIndex(x => x["_id"] == id);
+    let userObject = users[user];
+    let fromDate = new Date(Date.parse(req.query.from));
+    let toDate = new Date(Date.parse(req.query.to));
+    let limit = parseInt(req.query.limit);
+    let logArr = new Array;
+    for (i = 0; i < exercises.length; i++) {
+        let exercise = exercises[i]
+        if (exercise._id == id) {
+            logArr = [...logArr, exercise]
+        }
+    }
+    if (limit) {
+        for (i = 0; i < (logArr.length - limit); i++) {
+            logArr.pop()
+        }
+    }
+
+
+    let response = { ...userObject, count: logArr.length, log: logArr }
+    console.log(response)
+    res.send(response)
+});
+
+app.post('/api/users/:_id/exercises', (req, res) => {
+    let id = req.params._id
+    let desc = req.body.description
+    let dura = parseInt(req.body.duration)
+    let date = new Date(Date.parse(req.body.date)).toDateString()
+    let today = new Date().toDateString()
+    let user = users.findIndex(x => x["_id"] == id)
+    let userObject = users[user]
+    let exerciseObject = {
+        "_id": id,
+        "username": users[user]["username"],
+        "description": desc,
+        "duration": dura,
+        "date": date
+    }
+    exerciseObject.date == "Invalid Date" ? exerciseObject.date = today : false
+    exerciseObject.date == "" ? exerciseObject.date = today : false
+    exercises.push(exerciseObject)
+    let output = { ...userObject, ...exerciseObject }
+    res.json(output)
 });
 
 
-app.get('/api/users/:_id/logs', function(req,res){
-    
-})
 
 const listener = app.listen(process.env.PORT || 3000, () => {
     console.log('Your app is listening on port ' + listener.address().port)
